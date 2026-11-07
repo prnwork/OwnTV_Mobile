@@ -72,6 +72,7 @@ import tv.own.owntv.core.stalker.StreamUrlResolver
 import tv.own.owntv.core.sync.work.CatalogSyncScheduler
 import tv.own.owntv.core.ui.stage.PlaylistMark
 import tv.own.owntv.core.util.throttleLatest
+import tv.own.owntv.mobile.ui.components.M3uLanguageFilter
 import tv.own.owntv.mobile.ui.components.ReorderItem
 import tv.own.owntv.mobile.ui.shell.StartupLiveSelection
 
@@ -193,6 +194,32 @@ class LiveViewModel(
      * a switch, and a strip built from either lacks custom categories and shows hidden ones. The
      * remembered-category restore waits for the first strip complete for the profile in use.
      */
+    private val categoryNamesById: StateFlow<Map<Long, String>> = liveCategories
+        .map { cats -> cats.associate { it.id to it.name } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private val _selectedLanguage = MutableStateFlow<String?>(null)
+    val selectedLanguage: StateFlow<String?> = _selectedLanguage
+
+    fun setLanguage(lang: String?) {
+        _selectedLanguage.value = lang
+    }
+
+    val availableLanguages: StateFlow<List<String>> = ctx
+        .flatMapLatest { c ->
+            if (c.profileId < 0) flowOf(emptyList())
+            else categoryDao.observe(c.liveSourceIds, MediaType.LIVE).map { cats ->
+                M3uLanguageFilter.extractAvailableLanguages(cats.map { it.name })
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The strip with the profile and playlists it was built for, from that profile's own category
+     * edits: the shared [custom] starts empty and keeps the previous profile's edits for a moment after
+     * a switch, and a strip built from either lacks custom categories and shows hidden ones. The
+     * remembered-category restore waits for the first strip complete for the profile in use.
+     */
     private val categoriesFor: StateFlow<Pair<ActiveProfileSources?, List<LiveCategory>>> = ctx.flatMapLatest { c ->
         if (c.profileId < 0) return@flatMapLatest flowOf(null to emptyList())
         combine(
@@ -200,8 +227,10 @@ class LiveViewModel(
             customize.visibleOnceRead(c.profileId, MediaType.LIVE).filterNotNull(),
             combine(sortMode, settings.liveBuiltIns) { sort, builtIns -> sort to builtIns },
             channelDao.lockAwareCatchupCount(c.liveSourceIds.ifEmpty { listOf(-1L) }, sealedCategoryIds).distinctUntilChanged(),
-            profileDao.observeById(c.profileId),
-        ) { cats, cust, (sort, builtIns), catchupCount, profile -> c to buildCategories(cats, cust, sort, builtIns, catchupCount, profile) }
+            combine(_selectedLanguage, profileDao.observeById(c.profileId)) { lang, profile -> lang to profile },
+        ) { cats, cust, (sort, builtIns), catchupCount, (lang, profile) ->
+            c to buildCategories(cats, cust, sort, builtIns, catchupCount, profile, lang)
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null to emptyList())
 
     val categories: StateFlow<List<LiveCategory>> = categoriesFor.map { it.second }
@@ -214,19 +243,25 @@ class LiveViewModel(
         builtIns: tv.own.owntv.core.live.LiveBuiltIns,
         catchupCount: Int,
         profile: tv.own.owntv.core.database.entity.ProfileEntity?,
+        lang: String? = null,
     ): List<LiveCategory> = run {
         val folders = cats.railCategories(
             cust,
             kids = profile?.isKids == true,
             alphabetical = sort == SettingsRepository.SortMode.ALPHA,
         )
+        val categoriesById = cats.associateBy { it.id }
+        val filteredFolders = if (lang == null) folders else folders.filter { e ->
+            val catName = e.categoryId?.let { categoriesById[it]?.name } ?: e.displayName
+            M3uLanguageFilter.matchesLanguage(catName, null, lang)
+        }
         buildList {
             if (builtIns.showAll) add(LiveCategory(LiveKey.All, builtIn = LiveCategory.BuiltIn.ALL))
             add(LiveCategory(LiveKey.Favorites, builtIn = LiveCategory.BuiltIn.FAVORITES))
             add(LiveCategory(LiveKey.History, builtIn = LiveCategory.BuiltIn.HISTORY))
             if (catchupCount > 0 && builtIns.showCatchup) add(LiveCategory(LiveKey.Catchup, builtIn = LiveCategory.BuiltIn.CATCHUP))
             val sources = cats.associate { it.id to it.sourceId }
-            folders.forEach { e ->
+            filteredFolders.forEach { e ->
                 add(
                     LiveCategory(
                         key = e.categoryId?.let { LiveKey.Folder(it) } ?: LiveKey.Custom(e.customId!!),
@@ -398,10 +433,11 @@ class LiveViewModel(
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
 
-    private data class Args(val key: LiveKey, val ctx: ActiveProfileSources, val cust: SectionCustomizations, val hidden: Set<Long>)
+    private data class Args(val key: LiveKey, val ctx: ActiveProfileSources, val cust: SectionCustomizations, val hidden: Set<Long>, val lang: String? = null)
 
     val channels: Flow<PagingData<ChannelEntity>> =
-        combine(_selected, ctx, customOnceRead.filterNotNull(), hiddenCategoryIds, ::Args)
+        combine(_selected, ctx, customOnceRead.filterNotNull(), hiddenCategoryIds) { key, c, cust, hidden -> Args(key, c, cust, hidden) }
+            .combine(_selectedLanguage) { args, lang -> args.copy(lang = lang) }
             // A folder gaining or losing a manual order changes which query is correct, and the
             // cheap one does not observe content_order — so the pager has to be rebuilt. So does the
             // order tool, and the search field (settled for a moment, so each letter is not a query).
@@ -409,7 +445,7 @@ class LiveViewModel(
             .combine(sortMode) { args, _ -> args }
             .combine(_query.debounce(SEARCH_DEBOUNCE_MS).map { it.trim() }.distinctUntilChanged()) { args, q -> args to q }
             .flatMapLatest { (args, q) ->
-                val (key, c, cust, hidden) = args
+                val (key, c, cust, hidden, lang) = args
                 if (c.profileId < 0) {
                     flowOf(PagingData.empty())
                 } else {
@@ -437,7 +473,7 @@ class LiveViewModel(
                             contextKey = { folderContextKeys.value[it] },
                             hasManualOrder = { it in orderedContexts.value },
                         )
-                    }.flow.map { paging -> paging.applyCustomizations(key, cust, hidden) }
+                    }.flow.map { paging -> paging.applyCustomizations(key, cust, hidden, lang) }
                 }
             }
             .cachedIn(viewModelScope)
@@ -453,10 +489,13 @@ class LiveViewModel(
         key: LiveKey,
         cust: SectionCustomizations,
         hidden: Set<Long>,
+        lang: String?,
     ): PagingData<ChannelEntity> {
-        if (cust.hiddenItems.isEmpty() && cust.itemNames.isEmpty() && hidden.isEmpty() && cust.movedFromOrigin.isEmpty() && cust.sealedCategories.isEmpty()) return this
+        val catNames = categoryNamesById.value
         return filter { ch ->
-            tv.own.owntv.core.live.isChannelVisible(ch, cust, hidden, key) &&
+            val catName = ch.categoryId?.let { catNames[it] }
+            (lang == null || M3uLanguageFilter.matchesLanguage(catName, ch.name, lang)) &&
+                tv.own.owntv.core.live.isChannelVisible(ch, cust, hidden, key) &&
                 (cust.movedFromOrigin[CustomizeKeys.channel(ch)]?.let { origin ->
                     key !is LiveKey.Folder || origin != folderContextKeys.value[key.id]
                 } ?: true)

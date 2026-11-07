@@ -65,6 +65,7 @@ import tv.own.owntv.mobile.R
 import tv.own.owntv.mobile.ui.screens.home.groupedCountText
 import tv.own.owntv.mobile.ui.components.MobileBottomSheet
 import tv.own.owntv.mobile.ui.components.MobileIcons
+import tv.own.owntv.mobile.ui.components.LanguagePickerSheet
 import tv.own.owntv.mobile.ui.components.TwoPane
 import tv.own.owntv.mobile.ui.nav.isExpandedWidth
 import tv.own.owntv.mobile.ui.screens.ObeyScrollToTop
@@ -160,6 +161,9 @@ fun LibraryScreen(
     var menuFor by remember { mutableStateOf<VodItem?>(null) }
     var sortOpen by remember { mutableStateOf(false) }
     var categoriesOpen by remember { mutableStateOf(false) }
+    var languageOpen by remember { mutableStateOf(false) }
+    val availableLanguages by vm.availableLanguages.collectAsStateWithLifecycle()
+    val selectedLanguage by vm.selectedLanguage.collectAsStateWithLifecycle()
     var categoryMenuFor by remember { mutableStateOf<VodCategory?>(null) }
     var restoreFor by remember { mutableStateOf<VodCategory?>(null) }
     val lock = tv.own.owntv.mobile.ui.categorylock.rememberCategoryLock(
@@ -185,8 +189,8 @@ fun LibraryScreen(
     // Only on a real change: coming back from a title page re-enters this screen with the same selection,
     // and the saved scroll position must survive that.
     var shownSelection by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(tab, selected) {
-        val selection = "$tab|$selected"
+    LaunchedEffect(tab, selected, selectedLanguage) {
+        val selection = "$tab|$selected|$selectedLanguage"
         if (shownSelection == selection) return@LaunchedEffect
         val first = shownSelection == null
         shownSelection = selection
@@ -246,6 +250,15 @@ fun LibraryScreen(
                 inline = true,
                 modifier = Modifier.weight(1f),
             )
+            if (availableLanguages.isNotEmpty()) {
+                StageTool(
+                    onClick = { languageOpen = true },
+                    icon = MobileIcons.Translate,
+                    value = selectedLanguage ?: stringResource(R.string.sports_any),
+                    on = selectedLanguage != null,
+                    modifier = Modifier.widthIn(max = 130.dp),
+                )
+            }
             // The order and Grid | List sit at the right edge and the search takes all the rest; a long order
             // ("Hinzugefügt am" at a large font) shortens at 150 dp rather than squeezing the field to its icon.
             StageTool(
@@ -331,6 +344,14 @@ fun LibraryScreen(
             onViewMode = vm::setViewMode,
             onColumns = vm::setGridColumns,
             onDismiss = { sortOpen = false },
+        )
+    }
+    if (languageOpen) {
+        LanguagePickerSheet(
+            languages = availableLanguages,
+            selectedLanguage = selectedLanguage,
+            onSelectLanguage = vm::setLanguage,
+            onDismiss = { languageOpen = false },
         )
     }
     }

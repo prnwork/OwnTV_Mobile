@@ -76,6 +76,7 @@ import tv.own.owntv.core.settings.SettingsRepository
 import tv.own.owntv.core.storage.StorageAccess
 import tv.own.owntv.core.storage.MediaFolders
 import tv.own.owntv.core.subtitles.SubtitleController
+import tv.own.owntv.mobile.ui.components.M3uLanguageFilter
 import tv.own.owntv.mobile.ui.components.ReorderItem
 
 /** Which half of the library is on screen. */
@@ -218,24 +219,76 @@ class LibraryViewModel(
         .map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
+    private val categoryNamesById: StateFlow<Map<Long, String>> = vodCategories
+        .map { cats -> cats.associate { it.id to it.name } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private val _selectedLanguageMovies = MutableStateFlow<String?>(null)
+    private val _selectedLanguageSeries = MutableStateFlow<String?>(null)
+
+    val selectedLanguageMovies: StateFlow<String?> = _selectedLanguageMovies
+    val selectedLanguageSeries: StateFlow<String?> = _selectedLanguageSeries
+
+    val selectedLanguage: StateFlow<String?> =
+        combine(_tab, _selectedLanguageMovies, _selectedLanguageSeries) { tab, mov, ser ->
+            if (tab == LibraryTab.MOVIES) mov else ser
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun setLanguage(lang: String?) {
+        if (_tab.value == LibraryTab.MOVIES) {
+            _selectedLanguageMovies.value = lang
+        } else {
+            _selectedLanguageSeries.value = lang
+        }
+    }
+
+    val availableLanguagesMovies: StateFlow<List<String>> = ctx
+        .flatMapLatest { c ->
+            if (c.profileId < 0) flowOf(emptyList())
+            else categoryDao.observe(c.sourceIdsFor(MediaType.MOVIE), MediaType.MOVIE).map { cats ->
+                M3uLanguageFilter.extractAvailableLanguages(cats.map { it.name })
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val availableLanguagesSeries: StateFlow<List<String>> = ctx
+        .flatMapLatest { c ->
+            if (c.profileId < 0) flowOf(emptyList())
+            else categoryDao.observe(c.sourceIdsFor(MediaType.SERIES), MediaType.SERIES).map { cats ->
+                M3uLanguageFilter.extractAvailableLanguages(cats.map { it.name })
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val availableLanguages: StateFlow<List<String>> =
+        combine(_tab, availableLanguagesMovies, availableLanguagesSeries) { tab, mov, ser ->
+            if (tab == LibraryTab.MOVIES) mov else ser
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** The chip strip: All, Favorites, History, then the profile's own arranged folders. */
     val categories: StateFlow<List<VodCategory>> = combine(
         vodCategories,
         custom,
         sortMode,
+        selectedLanguage,
         ctx.flatMapLatest { profileDao.observeById(it.profileId) },
-    ) { cats, cust, sort, profile ->
+    ) { cats, cust, sort, lang, profile ->
         val folders = cats.railCategories(
             cust,
             kids = profile?.isKids == true,
             alphabetical = sort == SettingsRepository.SortMode.ALPHA,
         )
         val sourceOf = cats.associateBy({ it.id }, { it.sourceId })
+        val categoriesById = cats.associateBy { it.id }
+        val filteredFolders = if (lang == null) folders else folders.filter { e ->
+            val catName = e.categoryId?.let { categoriesById[it]?.name } ?: e.displayName
+            M3uLanguageFilter.matchesLanguage(catName, null, lang)
+        }
         buildList {
             add(VodCategory(LiveKey.All, builtIn = VodCategory.BuiltIn.ALL))
             add(VodCategory(LiveKey.Favorites, builtIn = VodCategory.BuiltIn.FAVORITES))
             add(VodCategory(LiveKey.History, builtIn = VodCategory.BuiltIn.HISTORY))
-            folders.forEach { e ->
+            filteredFolders.forEach { e ->
                 add(
                     VodCategory(
                         key = e.categoryId?.let { LiveKey.Folder(it) } ?: LiveKey.Custom(e.customId!!),
@@ -346,6 +399,7 @@ class LibraryViewModel(
         val hidden: Set<Long>,
         val query: String = "",
         val sort: SettingsRepository.SortMode = SettingsRepository.SortMode.PLAYLIST,
+        val lang: String? = null,
     )
 
     private val _query = MutableStateFlow("")
@@ -362,16 +416,19 @@ class LibraryViewModel(
      * used to be read once, when the pager was made — so picking another one in the sheet re-sorted
      * nothing until something else happened to rebuild the list.
      */
-    private fun args(selected: Flow<LiveKey>, sort: Flow<SettingsRepository.SortMode>): Flow<Args> =
-        combine(selected, ctx, customOnceRead.filterNotNull(), hiddenCategoryIds, ::Args)
+    private fun args(selected: Flow<LiveKey>, sort: Flow<SettingsRepository.SortMode>, lang: Flow<String?>): Flow<Args> =
+        combine(selected, ctx, customOnceRead.filterNotNull(), hiddenCategoryIds) { key, c, cust, hidden ->
+            Args(key, c, cust, hidden)
+        }
             .combine(orderedContexts) { args, _ -> args }
             .combine(_query.debounce(SEARCH_DEBOUNCE_MS)) { args, q -> args.copy(query = q.trim()) }
             .combine(sort) { args, s -> args.copy(sort = s) }
+            .combine(lang) { args, l -> args.copy(lang = l) }
 
     /** The films of the current selection. Collected only while the Movies tab is on screen. */
     val movies: Flow<PagingData<VodItem>> =
-        args(_selectedMovies, settings.sortMovies)
-            .flatMapLatest { (key, c, cust, hidden, query, sort) ->
+        args(_selectedMovies, settings.sortMovies, _selectedLanguageMovies)
+            .flatMapLatest { (key, c, cust, hidden, query, sort, lang) ->
                 if (c.profileId < 0) {
                     flowOf(PagingData.empty())
                 } else {
@@ -388,7 +445,7 @@ class LibraryViewModel(
                             hasManualOrder = { it in orderedContexts.value },
                         )
                     }.flow.map { paging ->
-                        paging.customized(key, cust, hidden, { CustomizeKeys.movie(it) }, { it.categoryId })
+                        paging.customized(key, cust, hidden, lang, { CustomizeKeys.movie(it) }, { it.categoryId }, { it.name })
                             .map { m -> m.asItem(cust) }
                     }
                 }
@@ -397,8 +454,8 @@ class LibraryViewModel(
 
     /** [movies] for shows. */
     val series: Flow<PagingData<VodItem>> =
-        args(_selectedSeries, settings.sortSeries)
-            .flatMapLatest { (key, c, cust, hidden, query, sort) ->
+        args(_selectedSeries, settings.sortSeries, _selectedLanguageSeries)
+            .flatMapLatest { (key, c, cust, hidden, query, sort, lang) ->
                 if (c.profileId < 0) {
                     flowOf(PagingData.empty())
                 } else {
@@ -415,7 +472,7 @@ class LibraryViewModel(
                             hasManualOrder = { it in orderedContexts.value },
                         )
                     }.flow.map { paging ->
-                        paging.customized(key, cust, hidden, { CustomizeKeys.series(it) }, { it.categoryId })
+                        paging.customized(key, cust, hidden, lang, { CustomizeKeys.series(it) }, { it.categoryId }, { it.name })
                             .map { s -> s.asItem(cust) }
                     }
                 }
@@ -433,12 +490,17 @@ class LibraryViewModel(
         key: LiveKey,
         cust: SectionCustomizations,
         hidden: Set<Long>,
+        lang: String?,
         itemKey: (T) -> String,
         categoryOf: (T) -> Long?,
+        nameOf: (T) -> String,
     ): PagingData<T> {
-        if (cust.hiddenItems.isEmpty() && hidden.isEmpty() && cust.movedFromOrigin.isEmpty() && cust.sealedCategories.isEmpty()) return this
+        val catNames = categoryNamesById.value
         return filter { item ->
-            itemKey(item) !in cust.hiddenItems && !cust.seals(key) && !cust.sealsItemIn(categoryOf(item)) &&
+            val catName = categoryOf(item)?.let { catNames[it] }
+            (lang == null || M3uLanguageFilter.matchesLanguage(catName, nameOf(item), lang)) &&
+                (cust.hiddenItems.isEmpty() || itemKey(item) !in cust.hiddenItems) &&
+                !cust.seals(key) && !cust.sealsItemIn(categoryOf(item)) &&
                 (categoryOf(item) == null || categoryOf(item) !in hidden) &&
                 (cust.movedFromOrigin[itemKey(item)]?.let { origin ->
                     key !is LiveKey.Folder || origin != folderContextKeys.value[key.id]

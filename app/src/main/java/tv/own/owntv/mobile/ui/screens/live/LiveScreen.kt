@@ -85,6 +85,7 @@ import tv.own.owntv.core.live.LiveKey
 import tv.own.owntv.mobile.R
 import tv.own.owntv.mobile.ui.screens.home.groupedCountText
 import tv.own.owntv.mobile.ui.components.ChannelLogoImage
+import tv.own.owntv.mobile.ui.components.LanguagePickerSheet
 import tv.own.owntv.mobile.ui.components.TwoPane
 import tv.own.owntv.mobile.ui.nav.isExpandedWidth
 import tv.own.owntv.mobile.ui.screens.ObeyScrollToTop
@@ -128,6 +129,9 @@ fun LiveScreen(
     val sort by vm.sort.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     val providers by vm.providerNames.collectAsStateWithLifecycle()
+    val availableLanguages by vm.availableLanguages.collectAsStateWithLifecycle()
+    val selectedLanguage by vm.selectedLanguage.collectAsStateWithLifecycle()
+    var languagePickerOpen by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     listState.ObeyScrollToTop(route = "live", scrollToTop = scrollToTop)
@@ -207,7 +211,7 @@ fun LiveScreen(
     }
 
     // Changing category scrolls back to the top: the position of the old list means nothing in the new one.
-    LaunchedEffect(selected) { listState.scrollToItem(0) }
+    LaunchedEffect(selected, selectedLanguage) { listState.scrollToItem(0) }
 
     // A channel from Search, or "Start on: Last channel · Live TV": its category, its row scrolled to.
     // Search has already started its preview; a startup one is previewed here, and with Live preview off
@@ -253,6 +257,15 @@ fun LiveScreen(
                     inline = true,
                     modifier = Modifier.weight(1f),
                 )
+                if (availableLanguages.isNotEmpty()) {
+                    StageTool(
+                        onClick = { languagePickerOpen = true },
+                        icon = MobileIcons.Translate,
+                        label = selectedLanguage ?: stringResource(R.string.sports_any),
+                        on = selectedLanguage != null,
+                        modifier = Modifier.widthIn(max = 130.dp),
+                    )
+                }
                 StageTool(
                     onClick = vm::toggleSort,
                     icon = MobileIcons.Sort,
@@ -266,6 +279,14 @@ fun LiveScreen(
                     contentDescription = stringResource(R.string.content_live_guide_view),
                 )
             }
+        }
+        if (languagePickerOpen) {
+            LanguagePickerSheet(
+                languages = availableLanguages,
+                selectedLanguage = selectedLanguage,
+                onSelectLanguage = vm::setLanguage,
+                onDismiss = { languagePickerOpen = false },
+            )
         }
         if (categoryPicker) {
             val counts by vm.categoryCounts.collectAsStateWithLifecycle()

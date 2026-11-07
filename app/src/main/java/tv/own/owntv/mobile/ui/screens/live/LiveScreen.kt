@@ -261,7 +261,7 @@ fun LiveScreen(
                     StageTool(
                         onClick = { languagePickerOpen = true },
                         icon = MobileIcons.Translate,
-                        label = selectedLanguage ?: stringResource(R.string.sports_any),
+                        value = selectedLanguage ?: stringResource(R.string.sports_any),
                         on = selectedLanguage != null,
                         modifier = Modifier.widthIn(max = 130.dp),
                     )

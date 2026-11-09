@@ -255,7 +255,7 @@
 1	technical	app/src/main/java/tv/own/owntv/mobile/ui/components/M3uLanguageFilter.kt	ZH
 1	technical	app/src/main/java/tv/own/owntv/mobile/ui/components/M3uLanguageFilter.kt	ZHO
 1	regex	app/src/main/java/tv/own/owntv/mobile/ui/components/M3uLanguageFilter.kt	[\\[(\\|]([A-Za-z]{2,10})[\\])\\|]
-1	regex	app/src/main/java/tv/own/owntv/mobile/ui/components/M3uLanguageFilter.kt	[\\s|:\\-–/()\\[\\],]+
+1	regex	app/src/main/java/tv/own/owntv/mobile/ui/components/M3uLanguageFilter.kt	[\\s|:\\-/()\\[\\],]+
 1	technical	app/src/main/java/tv/own/owntv/mobile/ui/components/M3uLanguageFilter.kt	РУССКИЙ
 1	log	app/src/main/java/tv/own/owntv/mobile/ui/components/MobileBottomSheet.kt	MobileBottomSheet needs a MobileSheetHost above it
 1	empty	app/src/main/java/tv/own/owntv/mobile/ui/components/MoveSheets.kt	\0

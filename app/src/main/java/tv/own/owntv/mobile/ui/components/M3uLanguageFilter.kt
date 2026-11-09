@@ -241,7 +241,7 @@ object M3uLanguageFilter {
         }
 
         // 3. Check words
-        val words = trimmed.split(Regex("[\\s|:\\-–/()\\[\\],]+"))
+        val words = trimmed.split(Regex("[\\s|:\\-/()\\[\\],]+"))
         for (word in words) {
             if (word.length >= 2) {
                 parseToken(word)?.let { return it }

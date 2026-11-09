@@ -305,8 +305,8 @@ object M3uLanguageFilter {
         "Vietnamese",
     )
 
-    private val BRACKET_TAG_REGEX = Regex("[\[(\|]([A-Za-z]{2,10})[\])\|]")
-    private val EPG_COUNTRY_REGEX = Regex("[\._-]([A-Za-z]{2,3})(@|$)")
+    private val BRACKET_TAG_REGEX = Regex("[\\[(\\|]([A-Za-z]{2,10})[\\])\\|]")
+    private val EPG_COUNTRY_REGEX = Regex("[\\._-]([A-Za-z]{2,3})(@|$)")
 
     fun parseToken(token: String): String? {
         val clean = token.trim().uppercase()
@@ -360,7 +360,7 @@ object M3uLanguageFilter {
         }
 
         // 3. Check words
-        val words = trimmed.split(Regex("[\s|:\-/()\[\],]+"))
+        val words = trimmed.split(Regex("[\\s|:\\-/()\\[\\],]+"))
         for (word in words) {
             if (word.length >= 2) {
                 parseToken(word)?.let { return it }

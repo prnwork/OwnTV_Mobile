@@ -56,4 +56,32 @@ class M3uLanguageFilterTest {
         assertNull(M3uLanguageFilter.detectLanguage("Favorites", "Channel 1"))
         assertNull(M3uLanguageFilter.detectLanguage(null, null))
     }
+
+    @Test
+    fun detectsLanguageFromEpgChannelIdWhenCategoryAndNameAreGeneric() {
+        assertEquals("English", M3uLanguageFilter.detectLanguage("News", "CNN", "CNN.us@SD"))
+        assertEquals("English", M3uLanguageFilter.detectLanguage("Entertainment", "BBC One", "BBC.uk@HD"))
+        assertEquals("Hindi", M3uLanguageFilter.detectLanguage("News", "Aaj Tak", "AajTak.in@SD"))
+        assertEquals("French", M3uLanguageFilter.detectLanguage("News", "France 24", "France24.fr@SD"))
+        assertEquals("Spanish", M3uLanguageFilter.detectLanguage("General", "12tv", "12tv.es@SD"))
+        assertEquals("German", M3uLanguageFilter.detectLanguage("General", "ZDF", "ZDF.de@SD"))
+        assertEquals("Italian", M3uLanguageFilter.detectLanguage("General", "Rai 1", "Rai1.it@SD"))
+    }
+
+    @Test
+    fun matchesLanguageWithEpgChannelId() {
+        assertTrue(M3uLanguageFilter.matchesLanguage("News", "CNN", "CNN.us@SD", "English"))
+        assertFalse(M3uLanguageFilter.matchesLanguage("News", "CNN", "CNN.us@SD", "French"))
+        assertTrue(M3uLanguageFilter.matchesLanguage("News", "Aaj Tak", "AajTak.in@SD", "Hindi"))
+        assertFalse(M3uLanguageFilter.matchesLanguage("News", "Aaj Tak", "AajTak.in@SD", "English"))
+    }
+
+    @Test
+    fun fallsBackToCommonLanguagesWhenCategoriesAreGeneric() {
+        val genericCategories = listOf("News", "Movies", "Sports", "General")
+        val extracted = M3uLanguageFilter.extractAvailableLanguages(genericCategories)
+        assertTrue(extracted.contains("English"))
+        assertTrue(extracted.contains("Hindi"))
+        assertTrue(extracted.contains("Spanish"))
+    }
 }

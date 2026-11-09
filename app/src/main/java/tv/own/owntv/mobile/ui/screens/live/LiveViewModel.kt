@@ -253,7 +253,8 @@ class LiveViewModel(
         val categoriesById = cats.associateBy { it.id }
         val filteredFolders = if (lang == null) folders else folders.filter { e ->
             val catName = e.categoryId?.let { categoriesById[it]?.name } ?: e.displayName
-            M3uLanguageFilter.matchesLanguage(catName, null, lang)
+            val detected = M3uLanguageFilter.detectLanguage(catName, null)
+            detected == null || detected.equals(lang, ignoreCase = true)
         }
         buildList {
             if (builtIns.showAll) add(LiveCategory(LiveKey.All, builtIn = LiveCategory.BuiltIn.ALL))
@@ -494,7 +495,7 @@ class LiveViewModel(
         val catNames = categoryNamesById.value
         return filter { ch ->
             val catName = ch.categoryId?.let { catNames[it] }
-            (lang == null || M3uLanguageFilter.matchesLanguage(catName, ch.name, lang)) &&
+            (lang == null || M3uLanguageFilter.matchesLanguage(catName, ch.name, ch.epgChannelId, lang)) &&
                 tv.own.owntv.core.live.isChannelVisible(ch, cust, hidden, key) &&
                 (cust.movedFromOrigin[CustomizeKeys.channel(ch)]?.let { origin ->
                     key !is LiveKey.Folder || origin != folderContextKeys.value[key.id]

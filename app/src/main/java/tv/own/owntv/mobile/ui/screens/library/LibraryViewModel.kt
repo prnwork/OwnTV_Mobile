@@ -282,7 +282,8 @@ class LibraryViewModel(
         val categoriesById = cats.associateBy { it.id }
         val filteredFolders = if (lang == null) folders else folders.filter { e ->
             val catName = e.categoryId?.let { categoriesById[it]?.name } ?: e.displayName
-            M3uLanguageFilter.matchesLanguage(catName, null, lang)
+            val detected = M3uLanguageFilter.detectLanguage(catName, null)
+            detected == null || detected.equals(lang, ignoreCase = true)
         }
         buildList {
             add(VodCategory(LiveKey.All, builtIn = VodCategory.BuiltIn.ALL))

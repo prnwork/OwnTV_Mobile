@@ -39,7 +39,7 @@ object M3uLanguageFilter {
         "SPA" to "Spanish",
         "SPANISH" to "Spanish",
         "ESPANOL" to "Spanish",
-        "ESPA?OL" to "Spanish",
+        "ESPAÑOL" to "Spanish",
         "MX" to "Spanish",
         "MEX" to "Spanish",
         "ARG" to "Spanish",
@@ -59,7 +59,7 @@ object M3uLanguageFilter {
         "FRA" to "French",
         "FRENCH" to "French",
         "FRANCAIS" to "French",
-        "FRAN?AIS" to "French",
+        "FRANÇAIS" to "French",
         "BE" to "French",
         "BEL" to "French",
 
@@ -85,7 +85,7 @@ object M3uLanguageFilter {
         "BR" to "Portuguese",
         "BRA" to "Portuguese",
         "PORTUGUESE" to "Portuguese",
-        "PORTUGU?S" to "Portuguese",
+        "PORTUGUÊS" to "Portuguese",
         "PORTUGUES" to "Portuguese",
 
         // Arabic
@@ -152,7 +152,7 @@ object M3uLanguageFilter {
         "RU" to "Russian",
         "RUS" to "Russian",
         "RUSSIAN" to "Russian",
-        "???????" to "Russian",
+        "РУССКИЙ" to "Russian",
         "UKR" to "Ukrainian",
         "UA" to "Ukrainian",
         "UKRAINIAN" to "Ukrainian",
@@ -180,7 +180,7 @@ object M3uLanguageFilter {
         "TUR" to "Turkish",
         "TURKISH" to "Turkish",
         "TURKCE" to "Turkish",
-        "T?RK?E" to "Turkish",
+        "TÜRKÇE" to "Turkish",
 
         // Dutch
         "NL" to "Dutch",
